@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / swift
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-26]
+    steps:
+      - uses: actions/checkout@v7
+      - run: swift --version
+      - name: Metal device
+        run: system_profiler SPDisplaysDataType | grep -E "Chipset|Metal" || true
+      - run: swift build
+      - run: swift test
+      - name: Embedded shader is current
+        run: tools/embed.sh && git diff --exit-code Sources/Tandem/Shader.swift
