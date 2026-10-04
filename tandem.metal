@@ -6,8 +6,14 @@
 //
 // Compile with fast math off (MTLMathMode.safe): the normals and exponentials are bit exact with
 // tandem-c only with correctly rounded products, sums, division and square root.
+//
+// This file is the single shader source of the Metal ports. Everything but the kernels lives in
+// namespace tandem and reads its parameters from the thread, so tandem-mlx includes the file as
+// the header of `mx.fast.metal_kernel` with TANDEM_NO_KERNELS defined.
 
 #include <metal_stdlib>
+
+namespace tandem {
 using namespace metal;
 
 constant uint CLOCK_WEYL = 0x9e3779b9u;
@@ -80,10 +86,11 @@ static uint4 purpose_key(uint4 key, ulong u) { return F_keyed(key, u, DOMAIN_FOL
 // meets the fill, 16 bytes at a time. The eight lanes of a group are eight consecutive threads
 // and their blocks form one 128-byte row, so a SIMD group writes whole rows.
 
+// Threads per threadgroup. The odd normal fill needs exactly this many in every threadgroup.
 constant uint THREADS = 256;
 constant uint GROUPS = THREADS / 8;
 
-// Matches the 24 words that the host packs, see Kernels.swift.
+// The 24 words that a host packs, 64-bit values low word first.
 struct Params {
     uint4 key;
     ulong g0;      // first group of the dispatch
@@ -115,7 +122,7 @@ struct Reader {
 // split(g) of purpose(P_w) of the fill's key, where g is the draw's index in the stream, so a
 // fill cut at any element equals the whole fill. Rejections are rare, so the retry stays out of
 // line. A range of 0 has threshold 0 and gives 0.
-static uint below32_retry(constant Params &P, ulong g) {
+static uint below32_retry(thread const Params &P, ulong g) {
     uint range = uint(P.range), t = uint(P.thresh);
     Reader r{split_key(purpose_key(P.key, PURPOSE_BELOW32), g), P.K, 0, uint4(0)};
     uint y;
@@ -124,7 +131,7 @@ static uint below32_retry(constant Params &P, ulong g) {
     return mulhi(y, range);
 }
 
-static ulong below64_retry(constant Params &P, ulong g) {
+static ulong below64_retry(thread const Params &P, ulong g) {
     Reader r{split_key(purpose_key(P.key, PURPOSE_BELOW64), g), P.K, 0, uint4(0)};
     ulong y;
     do {
@@ -134,12 +141,12 @@ static ulong below64_retry(constant Params &P, ulong g) {
     return mulhi(y, P.range);
 }
 
-static inline uint below32(uint x, constant Params &P, ulong g) {
+static inline uint below32(uint x, thread const Params &P, ulong g) {
     uint range = uint(P.range);
     return x * range < uint(P.thresh) ? below32_retry(P, g) : mulhi(x, range);
 }
 
-static inline ulong below64(ulong x, constant Params &P, ulong g) {
+static inline ulong below64(ulong x, thread const Params &P, ulong g) {
     return x * P.range < P.thresh ? below64_retry(P, g) : mulhi(x, P.range);
 }
 
@@ -181,22 +188,22 @@ static float2 normal_pair(float a, float b) {
 // `d` is the stream index of the block's first draw.
 struct U32 {
     enum { draw = 4 };
-    static uint4 make(uint4 w, constant Params &, ulong) { return w; }
+    static uint4 make(uint4 w, thread const Params &, ulong) { return w; }
 };
 struct F32 {
     enum { draw = 4 };
-    static uint4 make(uint4 w, constant Params &, ulong) { return as_type<uint4>(to_f32(w)); }
+    static uint4 make(uint4 w, thread const Params &, ulong) { return as_type<uint4>(to_f32(w)); }
 };
 struct Exponential32 {
     enum { draw = 4 };
-    static uint4 make(uint4 w, constant Params &, ulong) {
+    static uint4 make(uint4 w, thread const Params &, ulong) {
         float4 u = 1.0f - to_f32(w);
         return as_type<uint4>(0.5f * float4(neg2_log(u.x), neg2_log(u.y), neg2_log(u.z), neg2_log(u.w)));
     }
 };
 struct Below32 {
     enum { draw = 4 };
-    static uint4 make(uint4 w, constant Params &P, ulong d) {
+    static uint4 make(uint4 w, thread const Params &P, ulong d) {
         uint low = uint(P.low);
         return uint4(below32(w.x, P, d), below32(w.y, P, d + 1), below32(w.z, P, d + 2),
                      below32(w.w, P, d + 3)) + low;
@@ -204,7 +211,7 @@ struct Below32 {
 };
 struct Below64 {
     enum { draw = 8 };
-    static uint4 make(uint4 w, constant Params &P, ulong d) {
+    static uint4 make(uint4 w, thread const Params &P, ulong d) {
         ulong x = below64(as_type<ulong>(w.xy), P, d) + P.low;
         ulong y = below64(as_type<ulong>(w.zw), P, d + 1) + P.low;
         return uint4(as_type<uint2>(x), as_type<uint2>(y));
@@ -214,7 +221,7 @@ struct Below64 {
 // Store the part of one block that falls inside the fill. Elements are whole words, so the
 // partial path stores words.
 template <class E>
-static inline void store_block(device uchar *out, constant Params &P, ulong first, uint4 w) {
+static inline void store_block(device uchar *out, thread const Params &P, ulong first, uint4 w) {
     uint4 v = E::make(w, P, first / E::draw);
     if (first >= P.b0 && first + 16 <= P.b1 && ((P.out_off + first - P.b0) & 15) == 0) {
         *(device uint4 *)(out + (first - P.b0)) = v;
@@ -227,7 +234,7 @@ static inline void store_block(device uchar *out, constant Params &P, ulong firs
 }
 
 // 32-bit bounded draws widened to 64-bit outputs: a block is 32 bytes of output.
-static inline void store_block_wide(device uchar *out, constant Params &P, ulong first, uint4 w) {
+static inline void store_block_wide(device uchar *out, thread const Params &P, ulong first, uint4 w) {
     ulong d = first / 4;
     uint2 v[4];
     for (uint k = 0; k < 4; k++) v[k] = as_type<uint2>(ulong(below32(w[k], P, d + k)) + P.low);
@@ -246,19 +253,18 @@ static inline void store_block_wide(device uchar *out, constant Params &P, ulong
 struct Wide32 {};
 
 template <class E> struct Store {
-    static void run(device uchar *out, constant Params &P, ulong first, uint4 w) {
+    static void run(device uchar *out, thread const Params &P, ulong first, uint4 w) {
         store_block<E>(out, P, first, w);
     }
 };
 template <> struct Store<Wide32> {
-    static void run(device uchar *out, constant Params &P, ulong first, uint4 w) {
+    static void run(device uchar *out, thread const Params &P, ulong first, uint4 w) {
         store_block_wide(out, P, first, w);
     }
 };
 
 template <class E>
-kernel void fill(constant Params &P [[buffer(0)]], device uchar *out [[buffer(1)]],
-                 uint tid [[thread_position_in_grid]]) {
+static void fill(thread const Params &P, device uchar *out, uint tid) {
     ulong c = 8ul * P.g0 + tid, g = c >> 3, lane = c & 7;
     ulong r0 = P.b0 >> 7, r1 = (P.b1 - 1) >> 7, row = g * P.K;
     if (g > r1 / P.K) return;
@@ -271,12 +277,6 @@ kernel void fill(constant Params &P [[buffer(0)]], device uchar *out [[buffer(1)
     }
 }
 
-template [[host_name("fill_u32")]] kernel void fill<U32>(constant Params &, device uchar *, uint);
-template [[host_name("fill_f32")]] kernel void fill<F32>(constant Params &, device uchar *, uint);
-template [[host_name("fill_exponential_f32")]] kernel void fill<Exponential32>(constant Params &, device uchar *, uint);
-template [[host_name("fill_below32")]] kernel void fill<Below32>(constant Params &, device uchar *, uint);
-template [[host_name("fill_below32_wide")]] kernel void fill<Wide32>(constant Params &, device uchar *, uint);
-template [[host_name("fill_below64")]] kernel void fill<Below64>(constant Params &, device uchar *, uint);
 
 // ---- Normals --------------------------------------------------------------------------------
 //
@@ -286,7 +286,7 @@ template [[host_name("fill_below64")]] kernel void fill<Below64>(constant Params
 // the same step, or for lane 7 lane 0 at the next step.
 
 // Elements e and e + 1, or only e when e + 1 is past the fill.
-static inline void store_pair(device float *out, constant Params &P, ulong e, float2 z) {
+static inline void store_pair(device float *out, thread const Params &P, ulong e, float2 z) {
     if (e + 1 >= P.n) {
         out[e] = z.x;
     } else if (((P.out_off + 4 * e) & 7) == 0) {
@@ -298,8 +298,7 @@ static inline void store_pair(device float *out, constant Params &P, ulong e, fl
 }
 
 // s0 even. The step bounds are computed once, as in `fill`.
-kernel void fill_normal_f32(constant Params &P [[buffer(0)]], device float *out [[buffer(1)]],
-                            uint tid [[thread_position_in_grid]]) {
+static void fill_normal(thread const Params &P, device float *out, uint tid) {
     ulong c = 8ul * P.g0 + tid, g = c >> 3, lane = c & 7, row = g * P.K;
     ulong last = P.s0 + 2 * ((P.n + 1) / 2) - 1; // the last draw
     ulong r0 = P.s0 >> 5, r1 = last >> 5;
@@ -326,12 +325,10 @@ kernel void fill_normal_f32(constant Params &P [[buffer(0)]], device float *out 
 // s0 odd. Neighbours swap word 0 through threadgroup memory, so every thread of a threadgroup
 // runs the same steps and none returns early. A group's last pair needs the first block of the
 // next group, which the next group shares, or for the last group of a threadgroup computes.
-kernel void fill_normal_f32_odd(constant Params &P [[buffer(0)]], device float *out [[buffer(1)]],
-                                uint tid [[thread_position_in_grid]],
-                                uint lt [[thread_index_in_threadgroup]],
-                                uint tg [[threadgroup_position_in_grid]]) {
-    threadgroup uint word0[THREADS];
-    threadgroup uint first0[GROUPS];
+// The caller passes threadgroup arrays of THREADS and GROUPS words, since only a kernel can
+// declare them.
+static void fill_normal_odd(thread const Params &P, device float *out, uint tid, uint lt, uint tg,
+                            threadgroup uint *word0, threadgroup uint *first0) {
     ulong c = 8ul * P.g0 + tid, g = c >> 3, lane = c & 7, row = g * P.K;
     ulong r1 = (P.s0 + 2 * ((P.n + 1) / 2) - 1) >> 5;
     ulong first_row = (P.g0 + ulong(tg) * GROUPS) * P.K;
@@ -363,3 +360,43 @@ kernel void fill_normal_f32_odd(constant Params &P [[buffer(0)]], device float *
         store_pair(out, P, eheld, normal_pair(held, to_f32(x)));
     }
 }
+
+} // namespace tandem
+
+// ---- Kernels --------------------------------------------------------------------------------
+//
+// The Params in buffer 0, the output in buffer 1. Dispatch whole threadgroups of THREADS.
+
+#ifndef TANDEM_NO_KERNELS
+
+template <class E>
+kernel void fill(constant tandem::Params &P [[buffer(0)]], device uchar *out [[buffer(1)]],
+                 uint tid [[thread_position_in_grid]]) {
+    tandem::Params p = P;
+    tandem::fill<E>(p, out, tid);
+}
+
+template [[host_name("fill_u32")]] kernel void fill<tandem::U32>(constant tandem::Params &, device uchar *, uint);
+template [[host_name("fill_f32")]] kernel void fill<tandem::F32>(constant tandem::Params &, device uchar *, uint);
+template [[host_name("fill_exponential_f32")]] kernel void fill<tandem::Exponential32>(constant tandem::Params &, device uchar *, uint);
+template [[host_name("fill_below32")]] kernel void fill<tandem::Below32>(constant tandem::Params &, device uchar *, uint);
+template [[host_name("fill_below32_wide")]] kernel void fill<tandem::Wide32>(constant tandem::Params &, device uchar *, uint);
+template [[host_name("fill_below64")]] kernel void fill<tandem::Below64>(constant tandem::Params &, device uchar *, uint);
+
+kernel void fill_normal_f32(constant tandem::Params &P [[buffer(0)]], device float *out [[buffer(1)]],
+                            uint tid [[thread_position_in_grid]]) {
+    tandem::Params p = P;
+    tandem::fill_normal(p, out, tid);
+}
+
+kernel void fill_normal_f32_odd(constant tandem::Params &P [[buffer(0)]], device float *out [[buffer(1)]],
+                                uint tid [[thread_position_in_grid]],
+                                uint lt [[thread_index_in_threadgroup]],
+                                uint tg [[threadgroup_position_in_grid]]) {
+    threadgroup uint word0[tandem::THREADS];
+    threadgroup uint first0[tandem::GROUPS];
+    tandem::Params p = P;
+    tandem::fill_normal_odd(p, out, tid, lt, tg, word0, first0);
+}
+
+#endif
