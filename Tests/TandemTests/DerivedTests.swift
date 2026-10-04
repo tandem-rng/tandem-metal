@@ -1,5 +1,5 @@
 import Testing
-import Tandem
+@testable import Tandem
 
 /// Scalar bounded draws of tandem-cuda's urand(range), from the seed-42 key at position 1. The
 /// end position pins the number of rejected draws.
@@ -76,18 +76,49 @@ func fillBelowCut(start: UInt64) {
     }
 }
 
+/// tandem-c's ziggurat fills of 64 as fills and scalar draws, bit for bit with the end position.
+/// The last rows hold a wedge accept, a wedge reject and a tail draw at element 20.
+@Test func normalsF64() {
+    for row in cross.normalF64 {
+        var a = Tandem(key: seed42Key, position: row.start), b = a
+        var got = [Double](repeating: 0, count: 64)
+        a.fillNormalF64(&got)
+        #expect(got.map(\.bitPattern) == row.values.map(\.f64.bitPattern) && a.position == row.end, "start \(row.start)")
+        #expect(got.map { _ in b.nextNormalF64() } == got && b.position == row.end)
+    }
+}
+
 /// Box-Muller pairs of tandem-c from position 1, bit for bit, and the scalar normal is the cos half.
 @Test func normalPairs() {
     var r = Tandem(key: seed42Key, position: 1)
-    let f64 = (0..<64).flatMap { _ in let z = r.nextNormalPairF64(); return [z.0, z.1] }
-    #expect(f64.map(\.bitPattern) == cross.normalF64.values.map(\.f64.bitPattern) && r.position == cross.normalF64.end)
-    r.position = 1
     let f32 = (0..<64).flatMap { _ in let z = r.nextNormalPairF32(); return [z.0, z.1] }
     #expect(f32.map(\.bitPattern) == cross.normalF32.values.map(\.f32.bitPattern) && r.position == cross.normalF32.end)
     r.position = 1
-    #expect(r.nextNormalF64() == f64[0] && r.position == 192)
-    r.position = 1
     #expect(r.nextNormalF32() == f32[0] && r.position == 96)
+}
+
+/// A Float64 normal fill cut at a missed element and just after it equals the whole fill and
+/// the scalar draws, at two chunk lengths, since each miss keys its fallback by its global index.
+@Test func normalF64Cuts() {
+    let n = 3000
+    for K: UInt32 in [32, 8] {
+        let start = Tandem(key: key1234, position: 37, chunkLength: K)
+        var raw = [UInt64](repeating: 0, count: n), whole = [Double](repeating: 0, count: n)
+        var w = start, s = start
+        w.fillU64(&raw)
+        let misses = raw.indices.filter { raw[$0] >> 11 >= zigK[Int(raw[$0] & 1023)] }
+        #expect(misses.count >= 3)
+        w = start
+        w.fillNormalF64(&whole)
+        let cuts = [0, misses[0], misses[0] + 1, misses[2], n]
+        var part = start
+        for (a, b) in zip(cuts, cuts.dropFirst()) {
+            var got = [Double](repeating: 0, count: b - a)
+            part.fillNormalF64(&got)
+            #expect(got == Array(whole[a..<b]), "K = \(K) [\(a), \(b))")
+        }
+        #expect(whole.map { _ in s.nextNormalF64() } == whole && s.position == w.position && part.position == w.position)
+    }
 }
 
 /// tandem-cuda's normal and exponential fills at start positions, bit for bit, with odd lengths.
@@ -97,7 +128,7 @@ func fillBelowCut(start: UInt64) {
         var got = [Double](repeating: 0, count: row.n!)
         r.fillNormalF64(&got)
         #expect(got.map(\.bitPattern) == row.values.map(\.f64.bitPattern), "start \(row.start)")
-        #expect(r.position == align(row.start, 64) + 64 * UInt64(row.n! + 1))
+        #expect(r.position == align(row.start, 64) + 64 * UInt64(row.n!))
     }
     for row in cross.fillNormalF32 {
         var r = Tandem(key: seed42Key, position: row.start)
@@ -137,7 +168,8 @@ func fillBelowCut(start: UInt64) {
     }
 }
 
-/// An empty derived fill leaves the position, an empty uniform fill aligns it.
+/// An empty bounded, Float32 normal or exponential fill leaves the position, an empty uniform or
+/// Float64 normal fill aligns it.
 @Test func emptyFills() {
     for p: UInt64 in [1, 5, 33, 65, 1001] {
         var r = Tandem(key: key1234, position: p)
@@ -145,13 +177,15 @@ func fillBelowCut(start: UInt64) {
         r.fillU32(&u32, below: 10)
         r.fillU32(&u64, below: 10)
         r.fillU64(&u64, below: 10)
-        r.fillNormalF64(&f64)
         r.fillNormalF32(&f32)
         r.fillExponentialF64(&f64)
         r.fillExponentialF32(&f32)
         #expect(r.position == p)
         r.fillU32(&u32)
         #expect(r.position == align(p, 32))
+        r.fillNormalF64(&f64)
+        #expect(r.position == align(p, 64))
+        r.position = p
         r.fillF64(&f64)
         #expect(r.position == align(p, 64))
     }

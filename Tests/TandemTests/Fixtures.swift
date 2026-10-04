@@ -49,7 +49,7 @@ struct Cross: Decodable {
     let belowU32: [Row32], belowU64: [Row64]
     let fillBelowU32: [Row32], fillBelowU64: [Row64]
     let cudaBelowU32: [Row32], cudaBelowU64: [Row64], cudaBelowU32At: [Row32], cudaBelowU64At: [Row64]
-    let normalF64: Pairs, normalF32: Pairs
+    let normalF64: [Fill], normalF32: Pairs
     let fillNormalF64: [Fill], fillNormalF32: [Fill]
     let exponentialF64: [Fill], exponentialF32: [Fill]
     let fillExponentialF64: [Fill], fillExponentialF32: [Fill]

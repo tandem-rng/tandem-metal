@@ -93,10 +93,13 @@ int main(void) {
                 CROSS_BELOW64_AT[c].start, CROSS_BELOW64_AT[c].range, CROSS_BELOW64_AT[c].rejected);
          u64s(CROSS_BELOW64_AT[c].out, 64));
 
-    /* Normal pairs from position 1, then normal fills at start positions. */
-    printf("  \"normal_f64\": {\"end\": %" PRIu64 ", \"values\": ", CROSS_NORMAL_END_POS);
-    f64s(CROSS_NORMAL, 2 * CROSS_NORMAL_COUNT);
-    printf("},\n  \"normal_f32\": {\"end\": %" PRIu64 ", \"values\": ", CROSS_NORMALF_END_POS);
+    /* Ziggurat fills of 64 at tandem-c's starts, Box-Muller pairs from position 1, then normal
+     * fills at tandem-cuda's start positions. */
+    ROWS("normal_f64", CROSS_NORMAL,
+         printf("\"start\": %" PRIu64 ", \"end\": %" PRIu64 ", \"values\": ", CROSS_NORMAL[c].start,
+                CROSS_NORMAL[c].end_pos);
+         f64s(CROSS_NORMAL[c].want, CROSS_NORMAL_COUNT));
+    printf("  \"normal_f32\": {\"end\": %" PRIu64 ", \"values\": ", CROSS_NORMALF_END_POS);
     f32s(CROSS_NORMALF, 2 * CROSS_NORMAL_COUNT);
     printf("},\n");
     ROWS("fill_normal_f64", CROSS_NORMAL64,

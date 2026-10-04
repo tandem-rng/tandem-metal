@@ -145,36 +145,50 @@ extension Tandem {
 // MARK: Normals and exponentials
 
 extension Tandem {
-    /// Box-Muller of two uniforms a and b: (r cos 2 pi b, r sin 2 pi b) with r = sqrt(-2 ln(1 - a)),
-    /// the polynomial step of tandem-c, bit for bit.
-    public mutating func nextNormalPairF64() -> (Double, Double) {
-        let a = nextF64()
-        return normalPair(a, nextF64())
+    /// The fallback generator of a missed normal at global draw index g: split(g) of
+    /// purpose(P_N64) of the key at position 0. `parent` is that purpose child.
+    func zigFallback(_ parent: Tandem, _ g: UInt64) -> BlockDraws {
+        BlockDraws(key: parent.split(g).key, chunkLength: UInt64(chunkLength))
     }
 
+    /// A standard normal by the 1024-layer ziggurat of Appendix A from one 64-bit draw. A draw
+    /// that misses the inner rectangles continues on its fallback generator, which leaves the
+    /// position alone. It equals element 0 of a fill and tandem-c bit for bit.
+    public mutating func nextNormalF64() -> Double {
+        let g = align(pos, 64) >> 6, r = nextU64()
+        if let x = zigFast(r) { return x }
+        var f = zigFallback(Tandem(key: key, chunkLength: chunkLength).purpose(purposeNormal64), g)
+        return zigSlow(r, &f)
+    }
+
+    /// Box-Muller of two uniforms a and b: (r cos 2 pi b, r sin 2 pi b) with r = sqrt(-2 ln(1 - a)),
+    /// the polynomial step of tandem-c in single precision, bit for bit.
     public mutating func nextNormalPairF32() -> (Float, Float) {
         let a = nextF32()
         return normalPair(a, nextF32())
     }
 
     /// The cos half of a pair. It consumes two uniforms and equals element 0 of a fill.
-    public mutating func nextNormalF64() -> Double { nextNormalPairF64().0 }
-
     public mutating func nextNormalF32() -> Float { nextNormalPairF32().0 }
 
-    /// Pair j is elements 2j and 2j + 1 from uniforms 2j and 2j + 1. An odd count keeps the cos
-    /// half of its last pair and still consumes both uniforms. An empty fill leaves the position.
+    /// Element i from 64-bit draw i alone, so a fill cut at any element equals the whole fill.
+    /// An empty fill aligns the position to 64 bits.
     public mutating func fillNormalF64(_ out: inout [Double]) {
-        let pairs = out.count / 2
-        if pairs > 0 {
-            out.withUnsafeMutableBytes { fillRaw($0.baseAddress, count: 2 * pairs, width: 64) }
-            for j in 0..<pairs {
-                let z = normalPair(toF64(out[2 * j].bitPattern), toF64(out[2 * j + 1].bitPattern))
-                out[2 * j] = z.0
-                out[2 * j + 1] = z.1
+        let g = align(pos, 64) >> 6, n = out.count
+        var parent: Tandem?
+        out.withUnsafeMutableBufferPointer { o in
+            fillRaw(o.baseAddress, count: n, width: 64)
+            for i in 0..<n {
+                let r = o[i].bitPattern
+                if let x = zigFast(r) {
+                    o[i] = x
+                } else {
+                    parent = parent ?? Tandem(key: key, chunkLength: chunkLength).purpose(purposeNormal64)
+                    var f = zigFallback(parent!, g + UInt64(i))
+                    o[i] = zigSlow(r, &f)
+                }
             }
         }
-        if out.count % 2 == 1 { out[out.count - 1] = nextNormalF64() }
     }
 
     public mutating func fillNormalF32(_ out: inout [Float]) {
