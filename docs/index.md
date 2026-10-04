@@ -1,8 +1,12 @@
-# tandem-metal documentation
+# tandem-metal
+
+Metal and Swift implementation of Tandem8x32. Metal kernels fill GPU buffers and a Swift package
+draws on the CPU, bit for bit with the
+[specification](https://github.com/tandem-rng/spec/blob/main/SPEC.md) and tandem-c.
 
 - [API](api.md): the shader, the Swift `Tandem` type, GPU and CPU fills and draws.
 - [Design](design.md): the Appendix A rules and the arithmetic shared with tandem-c.
-- [Tests](tests.md): what the suite checks.
+- [Tests](tests.md): what the suite checks, the fixtures, and what CI runs.
 - [Speed](speed.md): Apple M4 Pro figures.
 
 ## Install

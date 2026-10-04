@@ -1,19 +1,5 @@
 # API
 
-- `tandem.metal`: the building blocks `T`, `F`, `F_keyed`, `block`, `split_key`, `purpose_key`
-  and the fills, as functions in namespace `tandem`, and the kernels `fill_u32`, `fill_f32`,
-  `fill_below32`, `fill_below32_wide`, `fill_below64`, `fill_normal_f32`, `fill_normal_f32_odd`
-  and `fill_exponential_f32`, which wrap them. One thread walks one chunk and stores each
-  16-byte block of draws with one vector store. It is the one shader source of the Metal ports:
-  [tandem-mlx](https://github.com/tandem-rng/tandem-mlx) vendors it unchanged and leaves the
-  kernels out with `TANDEM_NO_KERNELS`.
-- `Sources/Tandem`: the `Tandem` type, its CPU draws and fills, and `fill(_:count:buffer:...)`,
-  which encodes a kernel. `Shader.swift` embeds `tandem.metal` (`tools/embed.sh`), so the
-  package needs no resource bundle.
-
-Metal has no double type. Float64 uniforms, normals and exponentials run on the CPU, and the
-GPU fills `u64` words, which `(raw >> 11) 2^-53` maps to Float64 on the host.
-
 ## Use
 
 ```swift
@@ -39,6 +25,22 @@ var x = [Double](repeating: 0, count: 1000)    // the CPU path, f64 included
 rng.fillNormalF64(&x)
 let u = rng.nextF64(), k = rng.nextU64(below: 10), e = rng.nextExponentialF64()
 ```
+
+## Reference
+
+- `tandem.metal`: the building blocks `T`, `F`, `F_keyed`, `block`, `split_key`, `purpose_key`
+  and the fills, as functions in namespace `tandem`, and the kernels `fill_u32`, `fill_f32`,
+  `fill_below32`, `fill_below32_wide`, `fill_below64`, `fill_normal_f32`, `fill_normal_f32_odd`
+  and `fill_exponential_f32`, which wrap them. One thread walks one chunk and stores each
+  16-byte block of draws with one vector store. It is the one shader source of the Metal ports:
+  [tandem-mlx](https://github.com/tandem-rng/tandem-mlx) vendors it unchanged and leaves the
+  kernels out with `TANDEM_NO_KERNELS`.
+- `Sources/Tandem`: the `Tandem` type, its CPU draws and fills, and `fill(_:count:buffer:...)`,
+  which encodes a kernel. `Shader.swift` embeds `tandem.metal` (`tools/embed.sh`), so the
+  package needs no resource bundle.
+
+Metal has no double type. Float64 uniforms, normals and exponentials run on the CPU, and the
+GPU fills `u64` words, which `(raw >> 11) 2^-53` maps to Float64 on the host.
 
 A `Tandem` is the transport form of section 7, `key`, `position` and `chunkLength`, plus a cache
 of the current row. Copies draw the same values, and equality compares the transport form. Set
@@ -71,3 +73,11 @@ The CPU draws are `nextU32`, `nextU64`, `nextF32`, `nextF64`, `nextU32(below:)`,
 blocks for conformance tests. `Tandem` is a `RandomNumberGenerator` whose `next()` is
 `nextU64()`, so `Int.random(in:using:)` and `shuffled(using:)` take it, with the standard
 library's mappings rather than those of Appendix A.
+
+## Parallel use
+
+Element `i` of a fill is draw `i`, so threads, command buffers or devices that start at the
+position of their first element, or draw from `split(task)`, reproduce a serial run for any
+decomposition, as
+[Appendix B](https://github.com/tandem-rng/spec/blob/main/SPEC.md#appendix-b-parallel-decomposition-non-normative)
+of the specification shows. Start every range of a normal fill at an even element.
