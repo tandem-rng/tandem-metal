@@ -7,6 +7,7 @@ let package = Package(
     products: [.library(name: "Tandem", targets: ["Tandem"])],
     targets: [
         .target(name: "Tandem"),
+        .executableTarget(name: "tandem-bench", dependencies: ["Tandem"], path: "tools/bench"),
         .testTarget(name: "TandemTests", dependencies: ["Tandem"], resources: [.copy("Fixtures")]),
     ]
 )
