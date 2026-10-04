@@ -89,11 +89,11 @@ func fnv(_ h: UInt64, _ b: [UInt8]) -> UInt64 {
 
 // MARK: GPU
 
-let device = MTLCreateSystemDefaultDevice()
-let hasGPU = device != nil
+// No global MTLDevice: before the macOS 26 SDK it is not Sendable, which Swift 6 rejects.
+let hasGPU = MTLCreateSystemDefaultDevice() != nil
 
 /// The kernels of the default device. A compile failure fails the tests that use them.
-let kernels: Result<TandemKernels, Error>? = device.map { d in Result { try TandemKernels(device: d) } }
+let kernels: Result<TandemKernels, Error>? = MTLCreateSystemDefaultDevice().map { d in Result { try TandemKernels(device: d) } }
 
 /// The CPU fill of the same kind and length as a GPU fill, as bytes.
 func cpuFill(_ rng: inout Tandem, _ draw: GPUDraw, _ n: Int) -> [UInt8] {
