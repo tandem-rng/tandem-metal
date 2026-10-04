@@ -7,5 +7,6 @@ let package = Package(
     products: [.library(name: "Tandem", targets: ["Tandem"])],
     targets: [
         .target(name: "Tandem"),
+        .testTarget(name: "TandemTests", dependencies: ["Tandem"], resources: [.copy("Fixtures")]),
     ]
 )
