@@ -68,7 +68,8 @@ let roundConstants: [UInt32] = [
 
 @inline(__always) func rotl(_ x: UInt32, _ r: UInt32) -> UInt32 { (x &<< r) | (x &>> (32 &- r)) }
 
-@inline(__always) func rotl(_ x: SIMD8<UInt32>, _ r: UInt32) -> SIMD8<UInt32> { (x &<< r) | (x &>> (32 &- r)) }
+// Spelled with |, the rotates of the step compile to scalar `eor ..., ror` per lane on AArch64.
+@inline(__always) func rotl(_ x: SIMD4<UInt32>, _ r: UInt32) -> SIMD4<UInt32> { (x &<< r) &+ (x &>> (32 &- r)) }
 
 @inline(__always) func align(_ p: UInt64, _ w: UInt64) -> UInt64 { (p &+ w &- 1) & ~(w &- 1) }
 
@@ -141,26 +142,23 @@ extension Tandem {
 
 // MARK: Rows
 
-/// The eight chunks of a group at one step, word-major: o0 holds word 0 of every lane. One T
-/// over a row is then a few vector operations per word.
-struct Lanes: Sendable {
-    var o0 = SIMD8<UInt32>(), o1 = SIMD8<UInt32>(), o2 = SIMD8<UInt32>(), o3 = SIMD8<UInt32>()
-    var h0 = SIMD8<UInt32>(), h1 = SIMD8<UInt32>(), h2 = SIMD8<UInt32>(), h3 = SIMD8<UInt32>()
+/// Four chunks of a group at one step, word-major: o0 holds word 0 of each chunk, so one T is
+/// a few vector operations per word. Four lanes fill a NEON register. With eight lanes in a
+/// SIMD8, LLVM moves parts of the step into scalar registers.
+struct Quad: Sendable {
+    var o0 = SIMD4<UInt32>(), o1 = SIMD4<UInt32>(), o2 = SIMD4<UInt32>(), o3 = SIMD4<UInt32>()
+    var h0 = SIMD4<UInt32>(), h1 = SIMD4<UInt32>(), h2 = SIMD4<UInt32>(), h3 = SIMD4<UInt32>()
 
-    mutating func seed(_ key: SIMD4<UInt32>, group: UInt64) {
-        for lane in 0..<8 {
-            let (o, h) = Tandem.seedF(key: key, counter: 8 &* group &+ UInt64(lane), domain: Domain.stream,
-                                      aux: Domain.auxStream)
-            o0[lane] = o[0]; o1[lane] = o[1]; o2[lane] = o[2]; o3[lane] = o[3]
-            h0[lane] = h[0]; h1[lane] = h[1]; h2[lane] = h[2]; h3[lane] = h[3]
-        }
+    mutating func set(_ lane: Int, _ o: SIMD4<UInt32>, _ h: SIMD4<UInt32>) {
+        o0[lane] = o[0]; o1[lane] = o[1]; o2[lane] = o[2]; o3[lane] = o[3]
+        h0[lane] = h[0]; h1[lane] = h[1]; h2[lane] = h[2]; h3[lane] = h[3]
     }
 
     @inline(__always) mutating func step() {
-        let p0 = SIMD8<UInt64>(truncatingIfNeeded: o0) &* SIMD8<UInt64>(truncatingIfNeeded: h0 | 1)
-        let p1 = SIMD8<UInt64>(truncatingIfNeeded: o2) &* SIMD8<UInt64>(truncatingIfNeeded: h1 | 1)
-        let lo0 = SIMD8<UInt32>(truncatingIfNeeded: p0), hi0 = SIMD8<UInt32>(truncatingIfNeeded: p0 &>> 32)
-        let lo1 = SIMD8<UInt32>(truncatingIfNeeded: p1), hi1 = SIMD8<UInt32>(truncatingIfNeeded: p1 &>> 32)
+        let p0 = SIMD4<UInt64>(truncatingIfNeeded: o0) &* SIMD4<UInt64>(truncatingIfNeeded: h0 | 1)
+        let p1 = SIMD4<UInt64>(truncatingIfNeeded: o2) &* SIMD4<UInt64>(truncatingIfNeeded: h1 | 1)
+        let lo0 = SIMD4<UInt32>(truncatingIfNeeded: p0), hi0 = SIMD4<UInt32>(truncatingIfNeeded: p0 &>> 32)
+        let lo1 = SIMD4<UInt32>(truncatingIfNeeded: p1), hi1 = SIMD4<UInt32>(truncatingIfNeeded: p1 &>> 32)
         let n0 = o1 ^ hi1 ^ lo1, n1 = rotl(lo1, 16) ^ h2, n2 = o3 ^ hi0 ^ lo0, n3 = rotl(lo0, 16) ^ h3
         let a = h0 ^ rotl(h1, 7)
         h1 ^= rotl(h2, 13)
@@ -179,15 +177,42 @@ struct Lanes: Sendable {
         }
     }
 
-    /// The 128 bytes of the row in stream order.
+    /// The 64 bytes of the four blocks in stream order: a 4x4 transpose by two rounds of unzips.
     @inline(__always) func store(_ out: UnsafeMutableRawPointer) {
+        let a = SIMD8(lowHalf: o0, highHalf: o1), b = SIMD8(lowHalf: o2, highHalf: o3)
+        let even = SIMD8(lowHalf: a.evenHalf, highHalf: b.evenHalf)
+        let odd = SIMD8(lowHalf: a.oddHalf, highHalf: b.oddHalf)
+        out.storeBytes(of: even.evenHalf, toByteOffset: 0, as: SIMD4<UInt32>.self)
+        out.storeBytes(of: odd.evenHalf, toByteOffset: 16, as: SIMD4<UInt32>.self)
+        out.storeBytes(of: even.oddHalf, toByteOffset: 32, as: SIMD4<UInt32>.self)
+        out.storeBytes(of: odd.oddHalf, toByteOffset: 48, as: SIMD4<UInt32>.self)
+    }
+}
+
+/// The eight chunks of a group at one step, the row of 128 bytes they expose.
+struct Lanes: Sendable {
+    var a = Quad(), b = Quad()
+
+    mutating func seed(_ key: SIMD4<UInt32>, group: UInt64) {
         for lane in 0..<8 {
-            let at = 16 * lane
-            out.storeBytes(of: o0[lane], toByteOffset: at, as: UInt32.self)
-            out.storeBytes(of: o1[lane], toByteOffset: at + 4, as: UInt32.self)
-            out.storeBytes(of: o2[lane], toByteOffset: at + 8, as: UInt32.self)
-            out.storeBytes(of: o3[lane], toByteOffset: at + 12, as: UInt32.self)
+            let (o, h) = Tandem.seedF(key: key, counter: 8 &* group &+ UInt64(lane), domain: Domain.stream,
+                                      aux: Domain.auxStream)
+            if lane < 4 { a.set(lane, o, h) } else { b.set(lane - 4, o, h) }
         }
+    }
+
+    @inline(__always) mutating func step() {
+        a.step()
+        b.step()
+    }
+
+    @inline(__always) func word(_ w: UInt64, lane: Int) -> UInt32 {
+        lane < 4 ? a.word(w, lane: lane) : b.word(w, lane: lane - 4)
+    }
+
+    @inline(__always) func store(_ out: UnsafeMutableRawPointer) {
+        a.store(out)
+        b.store(out + 64)
     }
 }
 
@@ -211,17 +236,31 @@ extension Tandem {
         return lanes.word((p >> 5) & 3, lane: Int((p >> 7) & 7))
     }
 
-    /// The stream bytes [b0, b1) into out.
+    /// The stream bytes [b0, b1) into out. A run of whole rows inside one group keeps the lanes
+    /// in a local, as tandem-c's row loop does. Stepping them through `self` sends them through
+    /// memory on every row, which costs a tenth of the fill speed.
     mutating func fillBytes(_ out: UnsafeMutableRawPointer, from b0: UInt64, to b1: UInt64) {
-        guard b0 < b1 else { return }
-        withUnsafeTemporaryAllocation(byteCount: 128, alignment: 16) { tmp in
-            var at = b0, dst = out
-            while at < b1 {
-                let start = at & ~127, lo = Int(at - start), hi = Int(min(b1 - start, 128))
-                load(row: start >> 7)
-                if lo == 0 && hi == 128 {
-                    lanes.store(dst)
-                } else {
+        var at = b0, dst = out
+        while at < b1 {
+            let start = at & ~127, r = start >> 7
+            load(row: r)
+            if at == start && b1 - start >= 128 {
+                let shift = UInt64(chunkLength.trailingZeroBitCount)
+                let end = min(b1 >> 7, ((r >> shift) + 1) << shift)
+                var l = lanes
+                l.store(dst)
+                dst += 128
+                for _ in (r + 1)..<end {
+                    l.step()
+                    l.store(dst)
+                    dst += 128
+                }
+                lanes = l
+                row = end - 1
+                at = end << 7
+            } else {
+                let lo = Int(at - start), hi = Int(min(b1 - start, 128))
+                withUnsafeTemporaryAllocation(byteCount: 128, alignment: 16) { tmp in
                     lanes.store(tmp.baseAddress!)
                     dst.copyMemory(from: tmp.baseAddress! + lo, byteCount: hi - lo)
                 }
