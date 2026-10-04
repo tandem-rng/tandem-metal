@@ -79,7 +79,9 @@ The CPU draws are `nextU32`, `nextU64`, `nextF32`, `nextF64`, `nextU32(below:)`,
 `fillF32`, `fillF64`, `fillU32(_:below:low:)` into 32-bit or 64-bit arrays,
 `fillU64(_:below:low:)`, `fillNormalF64`, `fillNormalF32`, `fillExponentialF64` and
 `fillExponentialF32`. `Tandem.stepT`, `Tandem.seedF` and `Tandem.block` expose the building
-blocks for conformance tests.
+blocks for conformance tests. `Tandem` is a `RandomNumberGenerator` whose `next()` is
+`nextU64()`, so `Int.random(in:using:)` and `shuffled(using:)` take it, with the standard
+library's mappings rather than those of Appendix A.
 
 Bounded integers, normals and exponentials follow Appendix A of the specification. A bounded
 fill maps element `i` to draw `i`. A draw that Lemire rejects retries on `split(g)` of

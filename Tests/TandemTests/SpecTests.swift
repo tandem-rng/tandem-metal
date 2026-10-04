@@ -78,6 +78,13 @@ struct Vectors {
     #expect(p.position == 640)
 }
 
+@Test func randomNumberGenerator() {
+    var a = Tandem(seed: 9), b = a
+    #expect(a.next() == b.nextU64() && a == b)
+    let x = Int.random(in: 0..<10, using: &a)
+    #expect((0..<10).contains(x) && a.position > b.position)
+}
+
 /// tandem-c's stream dumps, from position 0 and from unaligned positions that cut rows.
 @Test(arguments: [("k1234_K32_u32", 32), ("k1234_K8_u32", 8)])
 func dumpsU32(name: String, K: UInt32) {

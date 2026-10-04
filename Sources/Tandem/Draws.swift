@@ -51,6 +51,12 @@ extension Tandem {
     }
 }
 
+/// The 64-bit draws, so that a generator drives the standard library's `random(in:using:)` and
+/// `shuffled(using:)`. Their mappings are the standard library's, not those of Appendix A.
+extension Tandem: RandomNumberGenerator {
+    public mutating func next() -> UInt64 { nextU64() }
+}
+
 // MARK: Bounded integers
 
 /// Purposes reserved for the fallback generators of bounded fills, Appendix A.
