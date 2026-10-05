@@ -65,7 +65,7 @@ other in one command buffer, since each call returns with the new position. The 
 in the output type with wrap-around, so a signed output takes the bit pattern of its bound.
 
 The CPU draws are `nextU32`, `nextU64`, `nextF32`, `nextF64`, `nextU32(below:)`,
-`nextU64(below:)`, `nextNormalF64`, `nextNormalPairF64`, `nextNormalF32`, `nextNormalPairF32`,
+`nextU64(below:)`, `nextNormalF64`, `nextNormalF32`, `nextNormalPairF32`,
 `nextExponentialF64` and `nextExponentialF32`. The CPU fills are `fillU32`, `fillU64`,
 `fillF32`, `fillF64`, `fillU32(_:below:low:)` into 32-bit or 64-bit arrays,
 `fillU64(_:below:low:)`, `fillNormalF64`, `fillNormalF32`, `fillExponentialF64` and
@@ -80,4 +80,4 @@ Element `i` of a fill is draw `i`, so threads, command buffers or devices that s
 position of their first element, or draw from `split(task)`, reproduce a serial run for any
 decomposition, as
 [Appendix B](https://github.com/tandem-rng/spec/blob/main/SPEC.md#appendix-b-parallel-decomposition-non-normative)
-of the specification shows. Start every range of a normal fill at an even element.
+of the specification shows. Start every range of a Float32 normal fill at an even element.

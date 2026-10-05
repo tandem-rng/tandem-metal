@@ -13,13 +13,13 @@ Apple M4 Pro, macOS 26, Swift 6.3.3, GiB/s of output.
 | `fillF32` | 7.7 |
 | `fillF64` | 7.7 |
 | `fillU32(_:below: 1000)` | 4.0 |
-| `fillNormalF64` | 2.5 |
+| `fillNormalF64` | 3.9 |
 | `fillNormalF32` | 1.9 |
 | `fillExponentialF64` | 3.3 |
 | `fillExponentialF32` | 2.4 |
 
-On the same machine tandem-c fills 18.7 GiB/s of u32, 5.0 of f64 normals and 6.1 of f64
-exponentials, so the CPU fills run at 35% to 54% of tandem-c. LLVM folds the row transpose into
+On the same machine tandem-c fills 18.7 GiB/s of u32, 7.1 of f64 normals and 6.1 of f64
+exponentials, so the CPU fills run at 35% to 55% of tandem-c. LLVM folds the row transpose into
 the shuffles of the step, and Swift has no shuffle intrinsic to keep them apart.
 
 ## GPU
