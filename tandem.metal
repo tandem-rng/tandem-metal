@@ -283,17 +283,18 @@ static void fill(thread const Params &P, device uchar *out, uint tid) {
 //
 // Appendix C: a 64-bit draw r gives column j = high word of r m, kept when the high word of
 // (r m mod 2^64) S is below cut[j], else alias[j]. One draw per element and no retry, so every
-// element is independent. P.range holds m and P.thresh the column capacity S.
+// element is independent. P.range holds m and P.thresh the column capacity S. The table pointers
+// are template parameters, since tandem-mlx may pass a small table in constant memory.
 
-static inline uint choice(ulong r, thread const Params &P, device const ulong *cut,
-                          device const uint *alias) {
+template <class Cut, class Alias>
+static inline uint choice(ulong r, thread const Params &P, Cut cut, Alias alias) {
     ulong j = mulhi(r, P.range), v = mulhi(r * P.range, P.thresh);
     return v < cut[j] ? uint(j) : alias[j];
 }
 
 // The walk of `fill`, storing one index for each 64-bit draw of a block inside the fill.
-static void fill_choice(thread const Params &P, device uint *out, device const ulong *cut,
-                        device const uint *alias, uint tid) {
+template <class Cut, class Alias>
+static void fill_choice(thread const Params &P, device uint *out, Cut cut, Alias alias, uint tid) {
     ulong c = 8ul * P.g0 + tid, g = c >> 3, lane = c & 7;
     ulong r0 = P.b0 >> 7, r1 = (P.b1 - 1) >> 7, row = g * P.K;
     if (g > r1 / P.K) return;
