@@ -30,8 +30,8 @@ let u = rng.nextF64(), k = rng.nextU64(below: 10), e = rng.nextExponentialF64()
 
 - `tandem.metal`: the building blocks `T`, `F`, `F_keyed`, `block`, `split_key`, `purpose_key`
   and the fills, as functions in namespace `tandem`, and the kernels `fill_u32`, `fill_f32`,
-  `fill_below32`, `fill_below32_wide`, `fill_below64`, `fill_normal_f32`, `fill_normal_f32_odd`
-  and `fill_exponential_f32`, which wrap them. One thread walks one chunk and stores each
+  `fill_below32`, `fill_below32_wide`, `fill_below64`, `fill_normal_f32`, `fill_normal_f32_odd`,
+  `fill_exponential_f32` and `fill_choice`, which wrap them. One thread walks one chunk and stores each
   16-byte block of draws with one vector store. It is the one shader source of the Metal ports:
   [tandem-mlx](https://github.com/tandem-rng/tandem-mlx) vendors it unchanged and leaves the
   kernels out with `TANDEM_NO_KERNELS`.
@@ -57,6 +57,14 @@ of the current row. Copies draw the same values, and equality compares the trans
 | `.u64Below(range:low:)` | 8 bytes | `low` + Lemire on `[0, range)` from 64-bit draws |
 | `.normalF32` | 4 bytes | Box-Muller pairs of f32 uniforms |
 | `.exponentialF32` | 4 bytes | `-ln(1 - u)` of f32 uniforms |
+| `.choice(table)` | 4 bytes | indices of a `ChoiceTable` from 64-bit draws |
+
+`ChoiceTable(weights:)` builds the integer alias table of
+[Appendix C](https://github.com/tandem-rng/spec/blob/main/SPEC.md#appendix-c-weighted-choice-non-normative)
+on the host from finite, nonnegative weights, not all zero, and throws otherwise. An index has
+probability proportional to its weight. Each element maps one 64-bit draw by integer operations
+and never retries, so the indices equal every other port's, on the CPU and the GPU, and an empty
+fill aligns the position to 64 bits. A GPU choice fill copies the table to the device.
 
 `fill` writes `count` elements at `offset` bytes, a multiple of the element size, and moves the
 position as the CPU fill of the same kind does. Without `commandBuffer` it runs on the kernels'
@@ -66,10 +74,10 @@ in the output type with wrap-around, so a signed output takes the bit pattern of
 
 The CPU draws are `nextU32`, `nextU64`, `nextF32`, `nextF64`, `nextU32(below:)`,
 `nextU64(below:)`, `nextNormalF64`, `nextNormalF32`, `nextNormalPairF32`,
-`nextExponentialF64` and `nextExponentialF32`. The CPU fills are `fillU32`, `fillU64`,
-`fillF32`, `fillF64`, `fillU32(_:below:low:)` into 32-bit or 64-bit arrays,
-`fillU64(_:below:low:)`, `fillNormalF64`, `fillNormalF32`, `fillExponentialF64` and
-`fillExponentialF32`. `Tandem.stepT`, `Tandem.seedF` and `Tandem.block` expose the building
+`nextExponentialF64`, `nextExponentialF32` and `nextChoice(_:)`. The CPU fills are `fillU32`,
+`fillU64`, `fillF32`, `fillF64`, `fillU32(_:below:low:)` into 32-bit or 64-bit arrays,
+`fillU64(_:below:low:)`, `fillNormalF64`, `fillNormalF32`, `fillExponentialF64`,
+`fillExponentialF32` and `fillChoice(_:table:)`. `Tandem.stepT`, `Tandem.seedF` and `Tandem.block` expose the building
 blocks for conformance tests. `Tandem` is a `RandomNumberGenerator` whose `next()` is
 `nextU64()`, so `Int.random(in:using:)` and `shuffled(using:)` take it, with the standard
 library's mappings rather than those of Appendix A.

@@ -12,7 +12,7 @@ public final class TandemKernels: @unchecked Sendable {
     static let threads = 256
     static let names = [
         "fill_u32", "fill_f32", "fill_exponential_f32", "fill_below32", "fill_below32_wide",
-        "fill_below64", "fill_normal_f32", "fill_normal_f32_odd",
+        "fill_below64", "fill_normal_f32", "fill_normal_f32_odd", "fill_choice",
     ]
 
     public enum Failure: Error {
@@ -61,8 +61,10 @@ public enum GPUDraw: Sendable {
     case normalF32
     /// -ln(1 - u) of each 32-bit uniform, bit for bit that of tandem-c.
     case exponentialF32
+    /// Indices of the alias table of Appendix C as UInt32, one 64-bit draw each, exact.
+    case choice(ChoiceTable)
 
-    /// Kernel, draw width, range, low bound, and whether the fill is a plain uniform fill.
+    /// Kernel, draw width, range, low bound, and whether an empty fill aligns the position.
     var layout: (String, UInt64, UInt64, UInt64, Bool) {
         switch self {
         case .u32: ("fill_u32", 32, 0, 0, true)
@@ -73,13 +75,14 @@ public enum GPUDraw: Sendable {
         case let .u32BelowWide(r, l): ("fill_below32_wide", 32, UInt64(r), l, false)
         case let .u64Below(r, l): ("fill_below64", 64, r, l, false)
         case .normalF32: ("fill_normal_f32", 32, 0, 0, false)
+        case let .choice(t): ("fill_choice", 64, UInt64(t.cut.count), 0, true)
         }
     }
 
     /// Bytes of one output element.
     public var size: Int {
         switch self {
-        case .u32, .f32, .u32Below, .normalF32, .exponentialF32: 4
+        case .u32, .f32, .u32Below, .normalF32, .exponentialF32, .choice: 4
         case .u64, .u32BelowWide, .u64Below: 8
         }
     }
@@ -120,7 +123,7 @@ extension Tandem {
         } else {
             let (kernel, w, range, low, plain) = draw.layout
             name = kernel
-            // An empty fill leaves the position, except a uniform fill, which aligns it.
+            // An empty fill leaves the position, except a uniform or choice fill, which aligns it.
             if count == 0 {
                 if plain { pos = align(pos, w) }
                 return
@@ -133,7 +136,11 @@ extension Tandem {
             put(8, b1)
             put(10, range)
             put(12, low)
-            put(14, w == 32 ? UInt64(threshold(UInt32(range))) : threshold(range))
+            if case let .choice(t) = draw {
+                put(14, t.capacity)
+            } else {
+                put(14, w == 32 ? UInt64(threshold(UInt32(range))) : threshold(range))
+            }
             pos = p1
         }
         put(4, g0)
@@ -143,6 +150,11 @@ extension Tandem {
         encoder.setComputePipelineState(kernels.pipelines[name]!)
         encoder.setBytes(words, length: 4 * words.count, index: 0)
         encoder.setBuffer(buffer, offset: offset, index: 1)
+        if case let .choice(t) = draw {
+            let device = kernels.device
+            encoder.setBuffer(device.makeBuffer(bytes: t.cut, length: 8 * t.cut.count)!, offset: 0, index: 2)
+            encoder.setBuffer(device.makeBuffer(bytes: t.alias, length: 4 * t.alias.count)!, offset: 0, index: 3)
+        }
         let threads = 8 * Int(g1 - g0 + 1), t = TandemKernels.threads
         encoder.dispatchThreadgroups(MTLSize(width: (threads + t - 1) / t, height: 1, depth: 1),
                                      threadsPerThreadgroup: MTLSize(width: t, height: 1, depth: 1))

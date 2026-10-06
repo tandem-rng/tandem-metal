@@ -36,6 +36,7 @@ let gpuDraws: [GPUDraw] = [
     .u32, .u64, .f32, .u32Below(range: 1000), .u32Below(range: 0xc000_0001, low: 0x8000_0000),
     .u32BelowWide(range: 0xc000_0001, low: 1 << 40), .u64Below(range: 1_000_000),
     .u64Below(range: 0xc000_0000_0000_0001, low: 5), .u32Below(range: 0), .normalF32, .exponentialF32,
+    .choice(try! ChoiceTable(weights: [3, 0, 1, 7.5, 0.125])), .choice(try! ChoiceTable(weights: [2])),
 ]
 
 /// Every GPU fill equals the CPU fill of the same kind: bytes, end position, and no store
@@ -59,35 +60,6 @@ func gpuEqualsCPU(draw index: Int) throws {
     }
 }
 
-/// The fixtures of tandem-c and tandem-cuda on the GPU, bit for bit.
-@Test(.enabled(if: hasGPU)) func gpuFixtures() throws {
-    let k = try gpu()
-    for row in cross.fills32 {
-        var r = Tandem(key: seed42Key, position: row.start!)
-        #expect(gpuFill(k, &r, .u32Below(range: row.range), 64).bytes == bytes(row.values), "start \(row.start!) range \(row.range)")
-    }
-    for row in cross.fills64 {
-        var r = Tandem(key: seed42Key, position: row.start!)
-        let got = gpuFill(k, &r, .u64Below(range: hex64(row.range)), 64).bytes
-        #expect(got == bytes(row.values.map(hex64)), "start \(row.start!) range \(row.range)")
-    }
-    var r = Tandem(key: seed42Key, position: 1)
-    #expect(gpuFill(k, &r, .normalF32, 128).bytes == bytes(cross.normalF32.values.map(\.f32)))
-    #expect(r.position == cross.normalF32.end)
-    for row in cross.fillNormalF32 {
-        var r = Tandem(key: seed42Key, position: row.start)
-        #expect(gpuFill(k, &r, .normalF32, row.n!).bytes == bytes(row.values.map(\.f32)), "start \(row.start)")
-    }
-    for row in cross.fillExponentialF32 {
-        var r = Tandem(key: seed42Key, position: row.start)
-        #expect(gpuFill(k, &r, .exponentialF32, row.n!).bytes == bytes(row.values.map(\.f32)), "start \(row.start)")
-    }
-    for row in cross.exponentialF32 {
-        var r = Tandem(key: seed42Key, position: row.start)
-        #expect(gpuFill(k, &r, .exponentialF32, 64).bytes == bytes(row.values.map(\.f32)) && r.position == row.end)
-    }
-}
-
 /// A GPU bounded fill cut at element boundaries equals the whole fill, rejections included.
 @Test(.enabled(if: hasGPU)) func gpuFillBelowCut() throws {
     let k = try gpu()
@@ -103,7 +75,8 @@ func gpuEqualsCPU(draw index: Int) throws {
     }
 }
 
-/// An empty GPU fill writes nothing. It leaves the position, except a uniform fill aligns it.
+/// An empty GPU fill writes nothing. It leaves the position, except a uniform or choice fill
+/// aligns it.
 @Test(.enabled(if: hasGPU)) func gpuEmptyFills() throws {
     let k = try gpu()
     for draw in gpuDraws {

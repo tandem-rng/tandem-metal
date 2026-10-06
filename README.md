@@ -27,6 +27,8 @@ let buffer = kernels.device.makeBuffer(length: 4 << 20, options: .storageModePri
 rng.fill(.u32, count: 1 << 20, buffer: buffer, kernels: kernels)            // blocks until done
 let worker = rng.split(7)                      // by index, from the key alone
 rng.fill(.normalF32, count: 1 << 20, buffer: buffer, kernels: kernels)     // Box-Muller, as tandem-c
+let table = try ChoiceTable(weights: [1, 2, 7])                             // Appendix C alias table
+rng.fill(.choice(table), count: 1 << 20, buffer: buffer, kernels: kernels) // UInt32 indices
 ```
 
 See [API](docs/api.md) for every GPU and CPU fill, and [design](docs/design.md),

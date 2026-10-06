@@ -25,8 +25,11 @@ jobs:
       - run: swift test
       - name: Embedded shader is current
         run: tools/embed.sh && git diff --exit-code Sources/Tandem/Shader.swift
-      - name: Ziggurat tables are current
+      - name: Ziggurat tables and conformance files are current
         run: |
-          git clone --depth 1 https://github.com/tandem-rng/spec ../tandem-spec
+          git clone -q https://github.com/tandem-rng/spec ../tandem-spec
           swift tools/gen_zig_tables.swift ../tandem-spec/tables/normal_f64_zig1024.json
           git diff --exit-code Sources/Tandem/ZigTables.swift
+          for f in Tests/TandemTests/Fixtures/conformance/*.json; do
+            git -C ../tandem-spec show "f420545:conformance/$(basename $f)" | diff - $f
+          done

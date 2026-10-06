@@ -2,74 +2,63 @@ import Foundation
 import Metal
 import Tandem
 
-/// The fixtures of tandem-c and tandem-cuda, written by tools/gen_fixtures.sh. 64-bit values and
-/// f64 bits are hex strings, f32 values are their bits.
-struct Cross: Decodable {
-    struct Row32: Decodable {
-        let start: UInt64?
-        let range: UInt32
+/// A case of the spec's conformance files, copies of tandem-spec f420545 conformance/*.json.
+/// Values, ranges, weights and tables are hex strings of their bits.
+struct Case: Decodable {
+    let id: String, kind: String
+    let key: [String]
+    let K: UInt32
+    let start: UInt64
+    let range: String?, weights: [String]?, capacity: String?, cut: [String]?, alias: [String]?
+    let n: Int
+    let values: [String]
+    let end: UInt64?
+    let rejected: Int?
+
+    var rng: Tandem { Tandem(key: SIMD4(key.map { UInt32($0, radix: 16)! }), position: start, chunkLength: K) }
+    var bits: [UInt64] { values.map(hex64) }
+    var f64: [Double] { bits.map(Double.init(bitPattern:)) }
+    var f32: [Float] { bits.map { Float(bitPattern: UInt32($0)) } }
+    var table: ChoiceTable { try! ChoiceTable(weights: weights!.map { Double(bitPattern: hex64($0)) }) }
+}
+
+struct Hashes: Decodable {
+    struct Stream: Decodable {
+        let file: String, type: String
+        let key: [String]
+        let K: UInt32
+        let n: Int
+        let sha256: String
+    }
+
+    struct Dump: Decodable {
+        struct Draw: Decodable { let kind: String, n: Int }
+        let id: String
+        let key: [String]
+        let starts: [UInt64]
+        let draws: [Draw]
+        let sha256: String?, fnv1a: String
         let end: UInt64?
-        let values: [UInt32]
     }
 
-    struct Row64: Decodable {
-        let start: UInt64?
-        let range: String
-        let end: UInt64?
-        let values: [String]
-    }
-
-    struct Pairs: Decodable {
-        let end: UInt64
-        let values: [Value]
-    }
-
-    struct Fill: Decodable {
-        let start: UInt64
-        let n: Int?
-        let end: UInt64?
-        let values: [Value]
-    }
-
-    /// A hex string of f64 bits or a number holding f32 bits.
-    enum Value: Decodable {
-        case hex(UInt64)
-        case bits(UInt32)
-
-        init(from decoder: Decoder) throws {
-            let c = try decoder.singleValueContainer()
-            if let s = try? c.decode(String.self) { self = .hex(UInt64(s, radix: 16)!) } else { self = .bits(try c.decode(UInt32.self)) }
-        }
-
-        var f64: Double { if case let .hex(b) = self { Double(bitPattern: b) } else { .nan } }
-        var f32: Float { if case let .bits(b) = self { Float(bitPattern: b) } else { .nan } }
-    }
-
-    let key: [UInt32]
-    let belowU32: [Row32], belowU64: [Row64]
-    let fillBelowU32: [Row32], fillBelowU64: [Row64]
-    let cudaBelowU32: [Row32], cudaBelowU64: [Row64], cudaBelowU32At: [Row32], cudaBelowU64At: [Row64]
-    let normalF64: [Fill], normalF32: Pairs
-    let fillNormalF64: [Fill], fillNormalF32: [Fill]
-    let exponentialF64: [Fill], exponentialF32: [Fill]
-    let fillExponentialF64: [Fill], fillExponentialF32: [Fill]
-
-    /// Every bounded-fill row of the two implementations, 32-bit and 64-bit.
-    var fills32: [Row32] { fillBelowU32 + cudaBelowU32 + cudaBelowU32At }
-    var fills64: [Row64] { fillBelowU64 + cudaBelowU64 + cudaBelowU64At }
+    let streams: [Stream], dumps: [Dump]
 }
 
 func fixtureURL(_ name: String) -> URL {
     Bundle.module.url(forResource: name, withExtension: nil, subdirectory: "Fixtures")!
 }
 
-let cross: Cross = {
-    let decoder = JSONDecoder()
-    decoder.keyDecodingStrategy = .convertFromSnakeCase
-    return try! decoder.decode(Cross.self, from: Data(contentsOf: fixtureURL("cross.json")))
-}()
+func conformance(_ name: String) -> [Case] {
+    struct File: Decodable { let cases: [Case] }
+    return try! JSONDecoder().decode(File.self, from: Data(contentsOf: fixtureURL("conformance/\(name).json"))).cases
+}
 
-let seed42Key = SIMD4<UInt32>(cross.key)
+let hashes = try! JSONDecoder().decode(Hashes.self, from: Data(contentsOf: fixtureURL("conformance/hashes.json")))
+
+/// The case whose id ends with " name".
+func named(_ file: String, _ name: String) -> Case { conformance(file).first { $0.id.hasSuffix(" " + name) }! }
+
+let seed42Key = SIMD4<UInt32>(0x421d_21eb, 0x32d3_1777, 0x62e7_564b, 0xdf2b_df82)
 let key1234 = SIMD4<UInt32>(1, 2, 3, 4)
 
 func hex64(_ s: String) -> UInt64 { UInt64(s, radix: 16)! }
@@ -106,6 +95,7 @@ func cpuFill(_ rng: inout Tandem, _ draw: GPUDraw, _ n: Int) -> [UInt8] {
     case let .u64Below(r, l): var a = [UInt64](repeating: 0, count: n); rng.fillU64(&a, below: r, low: l); return bytes(a)
     case .normalF32: var a = [Float](repeating: 0, count: n); rng.fillNormalF32(&a); return bytes(a)
     case .exponentialF32: var a = [Float](repeating: 0, count: n); rng.fillExponentialF32(&a); return bytes(a)
+    case let .choice(t): var a = [UInt32](repeating: 0, count: n); rng.fillChoice(&a, table: t); return bytes(a)
     }
 }
 
@@ -121,4 +111,11 @@ func gpuFill(_ k: TandemKernels, _ rng: inout Tandem, _ draw: GPUDraw, _ n: Int,
     let all = Array(UnsafeRawBufferPointer(start: buffer.contents(), count: length))
     let around = all[..<offset] + all[(offset + size)...]
     return (Array(all[offset..<offset + size]), around.allSatisfy { $0 == 0xa5 })
+}
+
+/// A Float32 normal or exponential fill on the GPU when there is one, else on the CPU.
+func fill32(normal: Bool) throws -> (inout Tandem, Int) -> [UInt8] {
+    let draw: GPUDraw = normal ? .normalF32 : .exponentialF32
+    guard let k = try kernels?.get() else { return { cpuFill(&$0, draw, $1) } }
+    return { gpuFill(k, &$0, draw, $1).bytes }
 }
