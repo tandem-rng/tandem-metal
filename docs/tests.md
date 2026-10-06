@@ -11,7 +11,7 @@ of the specification, and the CPU fills against tandem-c's stream dumps for u32 
 K = 8, u64, f32 and f64, from starts that cut rows.
 
 `ConformanceTests.swift` reads the spec's conformance files and checks the items of its
-`conformance/CHECKLIST.md`. Every bounded, normal, exponential and weighted choice case runs on
+`conformance/CHECKLIST.md` at b31af72. Every bounded, normal, exponential and weighted choice case runs on
 the CPU, whole, cut into two pieces, and as scalar draws where a scalar draw is element 0 of a
 fill. Every case of a kind Metal draws runs on the GPU, whole and cut. Values and end positions
 match bit for bit. The tests also check the scalar bounded draws, the fallback index of rejected

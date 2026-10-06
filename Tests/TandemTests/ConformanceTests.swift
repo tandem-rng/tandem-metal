@@ -3,7 +3,7 @@ import Foundation
 import Testing
 @testable import Tandem
 
-// The spec's conformance files and the items of its conformance/CHECKLIST.md. The port has no
+// The spec's conformance files and the items of its conformance/CHECKLIST.md at b31af72. The port has no
 // complex draws. A start position at or past 2^63 and a fill that reaches 2^64 stop the process
 // by a precondition, which a test cannot catch, so those items are not run here.
 
