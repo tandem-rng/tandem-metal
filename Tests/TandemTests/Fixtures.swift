@@ -2,7 +2,7 @@ import Foundation
 import Metal
 import Tandem
 
-/// A case of the spec's conformance files, copies of tandem-spec f420545 conformance/*.json.
+/// A case of the spec's conformance files, copies of tandem-spec 2a4bd08 conformance/*.json.
 /// Values, ranges, weights and tables are hex strings of their bits.
 struct Case: Decodable {
     let id: String, kind: String

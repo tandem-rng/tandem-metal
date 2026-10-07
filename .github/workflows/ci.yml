@@ -31,5 +31,5 @@ jobs:
           swift tools/gen_zig_tables.swift ../tandem-spec/tables/normal_f64_zig1024.json
           git diff --exit-code Sources/Tandem/ZigTables.swift
           for f in Tests/TandemTests/Fixtures/conformance/*.json; do
-            git -C ../tandem-spec show "f420545:conformance/$(basename $f)" | diff - $f
+            git -C ../tandem-spec show "2a4bd08:conformance/$(basename $f)" | diff - $f
           done

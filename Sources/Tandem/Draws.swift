@@ -204,10 +204,11 @@ extension Tandem {
         if out.count % 2 == 1 { out[out.count - 1] = nextNormalF32() }
     }
 
-    /// -ln(1 - u) of one uniform, with the polynomial logarithm of the normals.
+    /// -ln(1 - u) of one uniform, Float64 with the polynomial logarithm of the normals and
+    /// Float32 with the two-part logarithm of tandem-c, within 0.58 ulp.
     public mutating func nextExponentialF64() -> Double { 0.5 * neg2Log(1 - nextF64()) }
 
-    public mutating func nextExponentialF32() -> Float { 0.5 * neg2Log(1 - nextF32()) }
+    public mutating func nextExponentialF32() -> Float { negLog(1 - nextF32()) }
 
     /// Element i from uniform i. An empty fill leaves the position.
     public mutating func fillExponentialF64(_ out: inout [Double]) {
@@ -219,6 +220,6 @@ extension Tandem {
     public mutating func fillExponentialF32(_ out: inout [Float]) {
         guard !out.isEmpty else { return }
         fillF32(&out)
-        for i in out.indices { out[i] = 0.5 * neg2Log(1 - out[i]) }
+        for i in out.indices { out[i] = negLog(1 - out[i]) }
     }
 }

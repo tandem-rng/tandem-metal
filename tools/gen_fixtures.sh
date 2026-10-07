@@ -1,9 +1,9 @@
 #!/bin/sh
 # Rebuilds Tests/TandemTests/Fixtures from checkouts of the spec and tandem-c:
 #   tools/gen_fixtures.sh <tandem-spec> <tandem-c> [spec commit]
-# The conformance files come from the spec commit, f420545 by default, which CI checks.
+# The conformance files come from the spec commit, 2a4bd08 by default, which CI checks.
 set -e
-spec=$1 c=$2 rev=${3:-f420545}
+spec=$1 c=$2 rev=${3:-2a4bd08}
 root=$(cd "$(dirname "$0")/.." && pwd)
 out=$root/Tests/TandemTests/Fixtures
 mkdir -p "$out/conformance"

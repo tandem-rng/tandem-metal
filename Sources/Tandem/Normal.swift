@@ -31,6 +31,21 @@
     return fma(nk, 2.857213530660374e-06, fma(nk, 1.38629150390625, (s * -4.0) * p))
 }
 
+/// -ln x for x in (0, 1], the Float32 exponential of tandem-c, within 0.58 ulp. The leading term
+/// u = (2 - 2m) / (m + 1) is carried as uh + r / d, with m + 1 = d + dl exactly and r the
+/// residual of uh, and nk ln2_hi + uh is split exactly by fast two-sum.
+@inline(__always) func negLog(_ x: Float) -> Float {
+    let ix = x.bitPattern &+ 0x004a_fb0d
+    let nk = Float(127 - Int32(ix >> 23))
+    let m = Float(bitPattern: (ix & 0x007f_ffff) &+ 0x3f35_04f3)
+    let num = fma(m, -2.0, 2.0), d = m + 1, dl = m - (d - 1)
+    let rcp = 1 / d, uh = fma(num, rcp, 0.0)
+    let r = fma(-uh, dl, fma(-uh, d, num)), v = uh * uh
+    let q = fma(v, fma(v, 0.0023109776, 0.012496489), 0.08333336)
+    let a = nk * 0.693145751953125, hi = a + uh, e = uh - (hi - a)
+    return hi + fma(uh * v, q, fma(r, rcp, fma(nk, 1.428606765330187e-06, e)))
+}
+
 /// The angle 2 pi b is cut at the nearest quarter turn q, which is exact, short series give cos
 /// and sin on the rest, and q swaps them and sets their signs: odd q swaps, bit 1 of q negates
 /// the sine and bit 1 of q + 1 the cosine.
