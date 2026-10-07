@@ -11,7 +11,7 @@ of the specification, and the CPU fills against tandem-c's stream dumps for u32 
 K = 8, u64, f32 and f64, from starts that cut rows.
 
 `ConformanceTests.swift` reads the spec's conformance files and checks the items of its
-`conformance/CHECKLIST.md` at b31af72. Every bounded, normal, exponential and weighted choice case runs on
+`conformance/CHECKLIST.md` at 2a4bd08. Every bounded, normal, exponential and weighted choice case runs on
 the CPU, whole, cut into two pieces, and as scalar draws where a scalar draw is element 0 of a
 fill. Every case of a kind Metal draws runs on the GPU, whole and cut. Values and end positions
 match bit for bit. The tests also check the scalar bounded draws, the fallback index of rejected
@@ -37,11 +37,11 @@ empty fills. The GPU tests skip when there is no Metal device.
 ## Fixtures
 
 `Fixtures/vectors.json` is a copy of the spec repository's file. `Fixtures/conformance` holds the
-spec's `conformance/*.json` at commit `f420545`, and the `.bin` files are tandem-c's stream dumps.
+spec's `conformance/*.json` at commit `2a4bd08`, and the `.bin` files are tandem-c's stream dumps.
 `tools/gen_fixtures.sh` copies them.
 
 ## CI
 
 CI runs `swift build` and `swift test` on macos-15 and macos-26 runners. It fails when the
 embedded shader drifts from `tandem.metal`, the ziggurat tables from the spec's table file, or the
-conformance files from the spec at `f420545`.
+conformance files from the spec at `2a4bd08`.

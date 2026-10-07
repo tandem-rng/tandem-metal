@@ -25,6 +25,8 @@ count consumes one uniform more than it writes.
 
 The normals and exponentials copy the arithmetic of tandem-c: a short series for `log` on the
 exponent-split argument, and series for `cos` and `sin` on an angle cut at the nearest quarter
-turn, with every multiply-add an explicit `fma`. The ziggurat takes `log` only on a missed draw. The shader is compiled with fast math off and
+turn, with every multiply-add an explicit `fma`. The Float32 exponential takes tandem-c's
+two-part `-log`, within 0.58 ulp: the leading quotient carried with its residual and the
+exponent's `ln 2` added by an exact two-sum. The ziggurat takes `log` only on a missed draw. The shader is compiled with fast math off and
 takes division and square root from `precise::`, which round correctly. The GPU f32 normals and
 exponentials and the CPU f32 and f64 ones are then bit for bit those of tandem-c.
