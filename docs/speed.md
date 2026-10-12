@@ -1,4 +1,4 @@
-# Speed
+# Performance
 
 `swift run -c release tandem-bench` prints the GPU fills into device memory, no readback, 16
 fills per command buffer timed on the GPU, best of 7, and the CPU fills on one core, best of 5.

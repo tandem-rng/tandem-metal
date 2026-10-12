@@ -7,7 +7,7 @@ draws on the CPU, bit for bit with the
 - [API](api.md): the shader, the Swift `Tandem` type, GPU and CPU fills and draws.
 - [Design](design.md): the Appendix A rules and the arithmetic shared with tandem-c.
 - [Tests](tests.md): what the suite checks, the fixtures, and what CI runs.
-- [Speed](speed.md): Apple M4 Pro figures.
+- [Performance](speed.md): Apple M4 Pro figures.
 
 ## Install
 
