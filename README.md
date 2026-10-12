@@ -10,12 +10,13 @@ Metal and Swift implementation of [Tandem8x32](https://github.com/tandem-rng/spe
 noncryptographic pseudorandom number generator. Metal kernels fill GPU buffers and a Swift
 package draws on the CPU, bit for bit with the specification and tandem-c.
 
-Add the package with swift-tools-version 6.0 or later on macOS 15 or later. Metal has no double
-type, so Float64 draws run on the CPU.
+## Install
 
 ```swift
 .package(url: "https://github.com/tandem-rng/tandem-metal", branch: "main")   // Package.swift
 ```
+
+## Quick start
 
 ```swift
 import Metal
@@ -31,9 +32,16 @@ let table = try ChoiceTable(weights: [1, 2, 7])                             // A
 rng.fill(.choice(table), count: 1 << 20, buffer: buffer, kernels: kernels) // UInt32 indices
 ```
 
+## Requirements
+
+Needs swift-tools-version 6.0 or later on macOS 15 or later. Metal has no double
+type, so Float64 draws run on the CPU.
+
+## Documentation
+
 See [API](docs/api.md) for every GPU and CPU fill, and [design](docs/design.md),
 [tests](docs/tests.md) and [speed](docs/speed.md) for the rest. Run the tests with `swift test`.
 
 Portions of the code were generated with the assistance of LLMs.
 
-[Documentation](https://tandem-rng.github.io/tandem-metal/) · [Apache 2.0 license](LICENSE)
+[Docs](https://tandem-rng.github.io/tandem-metal/) · [Specification](https://github.com/tandem-rng/spec/blob/main/SPEC.md) · [Website](https://tandem-rng.github.io/) · [Issues](https://github.com/tandem-rng/tandem-metal/issues) · [License](LICENSE)
